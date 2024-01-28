@@ -2,7 +2,7 @@ import os
 import platform
 import json
 import datetime
-import time
+
 
 arquivo_dados = "dados_financeiros.json"
 
@@ -14,12 +14,14 @@ def limpar_tela():
         os.system('clear')  # Para Linux e MacOS
 def obter_timestamp_atual():
     """
+
     Retorna o timestamp atual.
     
     """
-    return int(time.time())
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 def converter_data_para_timestamp(data_str):
     """
+
     Converte uma data no formato 'DD-MM-AAAA' para timestamp.
     
     """
@@ -32,7 +34,11 @@ def converter_data_para_timestamp(data_str):
         print("Formato de data inválido. Use 'DD-MM-AAAA'.")
         return None
 def ler_dados():
-    """Lê os dados do arquivo JSON e retorna a lista de registros."""
+    """
+
+    Lê os dados do arquivo JSON e retorna a lista de registros.
+    
+    """
     try:
         with open(arquivo_dados, 'r') as arquivo:
             return json.load(arquivo)
@@ -40,9 +46,39 @@ def ler_dados():
         return []
 
 def escrever_dados(dados):
-    """Escreve a lista de registros atualizada no arquivo JSON."""
+    """
+    Escreve a lista de registros atualizada no arquivo JSON.
+    
+    """
     with open(arquivo_dados, 'w') as arquivo:
         json.dump(dados, arquivo, indent=4)
+def atualizar_montantes_investimento():
+    registros = ler_dados()
+    data_atual = datetime.datetime.now()
+    houve_atualizacao = False
+
+    for registro in registros:
+        if registro['tipo'] == 'Investimento':
+            data_investimento = datetime.datetime.strptime(registro['data_investimento'], '%d-%m-%Y')
+            diferenca_dias = (data_atual - data_investimento).days
+
+            # Converte a taxa de juros anual para diária
+            taxa_juros_anual = registro['taxa_juros_anual']
+            taxa_juros_diaria = (1 + taxa_juros_anual) ** (1 / 365) - 1
+
+            # Recalcula o montante
+            montante_atualizado = round(registro['valor'] * ((1 + taxa_juros_diaria) ** diferenca_dias),2)
+            registro['montante'] = montante_atualizado
+
+            # Atualiza o timestamp de atualização
+            registro['timestamp_atualizacao'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            houve_atualizacao = True
+
+    if houve_atualizacao:
+        escrever_dados(registros)
+        print("Montantes de investimento atualizados com sucesso para a data atual.")
+    else:
+        print("Não há registros de investimento para atualizar.")
 
 def cadastrar():
     registros = ler_dados()
@@ -51,42 +87,82 @@ def cadastrar():
     print("Cadastro de Transações")
     print("-" * 50)
 
-    tipo = input("Tipo de transação (Receita/Despesa/Investimento): ").strip().capitalize()
-    if tipo not in ['Receita', 'Despesa', 'Investimento']:
-        print("Tipo inválido.")
-        return
+    tipos_transacao = ["Receita", "Despesa", "Investimento"]
+    print("Selecione o tipo de transação:")
+    for i, tipo in enumerate(tipos_transacao, start=1):
+        print(f"{i} - {tipo}")
 
-    valor = input("Valor da transação: ").strip()
-    try:
-        valor = float(valor)
-    except ValueError:
-        print("Valor inválido.")
-        return
+    while True:
+        escolha_tipo = input("Digite o número correspondente ao tipo ou '0' para voltar: ").strip()
+
+        if escolha_tipo == '0':
+            return
+
+        if escolha_tipo.isdigit() and 1 <= int(escolha_tipo) <= len(tipos_transacao):
+            tipo = tipos_transacao[int(escolha_tipo) - 1]
+            break
+        else:
+            print("Opção inválida. Tente novamente.")
+
+    valor = float(input("Digite o valor da transação: "))
+    data_investimento_str = None
+    montante = None
 
     if tipo == 'Investimento':
-        data_investimento_str = input("Digite a data do investimento (DD-MM-AAAA): ")
-        timestamp_investimento = converter_data_para_timestamp(data_investimento_str)
-        if timestamp_investimento is None:  # Verifica se a conversão foi bem-sucedida
-            return
-    else:
-        timestamp_investimento = None  # Não aplicável para outros tipos
 
-    timestamp_registro = obter_timestamp_atual()
-    timestamp_atualizacao = timestamp_registro  # Inicialmente, igual ao timestamp de registro
+        data_investimento_str = input("Digite a data do investimento (DD-MM-AAAA): ")
+        data_investimento = datetime.datetime.strptime(data_investimento_str, '%d-%m-%Y')
+        data_atual = datetime.datetime.now()
+
+        if data_investimento > data_atual:
+            print("Data do investimento não pode ser futura.")
+            return 
+        
+
+        print("Frequência de capitalização:")
+        print("1 - Anual")
+        print("2 - Mensal")
+        print("3 - Diária")
+        freq_capitalizacao = input("Escolha a frequência de capitalização: ").strip()
+
+        taxa_juros = float(input("Digite a taxa de juros (%): ")) / 100
+
+        # Conversão da taxa de juros para base diária
+        if freq_capitalizacao == '1':  # Anual
+            taxa_juros_anual = taxa_juros
+        elif freq_capitalizacao == '2':  # Mensal
+            taxa_juros_anual = ((1 + taxa_juros / 100 / 12) ** 12 - 1) * 100
+        elif freq_capitalizacao == '3':  # Diária
+            taxa_juros_anual = ((1 + taxa_juros / 100 / 365) ** 365 - 1) * 100
+        else:
+            print("Opção de frequência da taxa de juros inválida.")
+            return
+
+        # Calcula o montante usando a fórmula de juros compostos com base no número de dias
+        montante = round(valor,2)
+    elif tipo == 'Despesa':
+        valor = -abs(valor)  # Garante que o valor da despesa seja armazenado como negativo
 
     # Constrói o registro
     registro = {
         "id": ultimo_id + 1,
         "tipo": tipo,
-        "valor": valor,
-        "data_investimento": data_investimento_str if tipo == 'Investimento' else None,
-        "timestamp_registro": timestamp_registro,
-        "timestamp_atualizacao": timestamp_atualizacao,
-        "montante": None  # Opcional, depende da sua lógica para calcular montantes
+        "valor": round(valor,2),
+        "data_investimento": data_investimento_str,
+        "timestamp_registro": obter_timestamp_atual(),
+        "timestamp_atualizacao": obter_timestamp_atual(),
+        "taxa_juros_anual": taxa_juros_anual if tipo == 'Investimento' else None,
+        "montante": montante
     }
 
     registros.append(registro)
     escrever_dados(registros)
+
+    if tipo == 'Investimento':
+        # Cadastra o investimento
+        atualizar_montantes_investimento()
+
+    limpar_tela()
     print("Transação cadastrada com sucesso!")
 
 def inicializar_arquivo():
@@ -126,11 +202,88 @@ def iniciar():
             print("\033[1;31mOpção inválida. Tente novamente.\033[0m")
             input("\033[1;37mPressione Enter para continuar...\033[0m")
 def consultar():
-    pass
+    registros = ler_dados()
+    print("Consulta de Registros")
+    print("-" * 50)
+    print("Escolha o critério de consulta:")
+    print("1 - Por Data")
+    print("2 - Por Tipo")
+    print("3 - Por Valor")
+    escolha = input("Digite o número correspondente ao critério: ").strip()
+
+    resultados = []
+    if escolha == '1':
+        data_consulta = input("Digite a data (DD-MM-AAAA): ")
+        for registro in registros:
+            if 'data_investimento' in registro and registro['data_investimento'] == data_consulta:
+                resultados.append(registro)
+    elif escolha == '2':
+        tipo_consulta = input("Digite o tipo (Receita, Despesa, Investimento): ").capitalize()
+        resultados = [registro for registro in registros if registro['tipo'] == tipo_consulta]
+    elif escolha == '3':
+        valor_consulta = float(input("Digite o valor: "))
+        resultados = [registro for registro in registros if registro['valor'] == valor_consulta]
+
+    if resultados:
+        for resultado in resultados:
+            print(resultado)
+            input("Pressione Enter para sair")
+    else:
+        print("Nenhum registro encontrado.")
+
 def atualizar():
-    pass
+
+    registros = ler_dados()
+    print("Atualização de Registro")
+    print("-" * 50)
+    id_registro = int(input("Digite o ID do registro que deseja atualizar: "))
+
+    registro_encontrado = next((registro for registro in registros if registro['id'] == id_registro), None)
+    if registro_encontrado:
+        print(f"Tipo atual: {registro_encontrado['tipo']}")
+        novo_tipo = input("Digite o novo tipo (Receita, Despesa, Investimento) ou pressione Enter para manter: ").capitalize()
+        
+        # Se o registro for de investimento e estiver sendo alterado para outro tipo, considere o montante como o valor
+        if registro_encontrado['tipo'] == 'Investimento' and novo_tipo and novo_tipo != 'Investimento':
+            print(f"Convertendo o montante de investimento ({registro_encontrado['montante']}) para o valor de {novo_tipo}.")
+            registro_encontrado['valor'] = registro_encontrado['montante']
+            registro_encontrado['montante'] = None  # Limpa o montante, pois não se aplica mais
+            registro_encontrado['taxa_juros_anual'] = None  # Limpa a taxa de juros anual
+            registro_encontrado['data_investimento'] = None  # Limpa a data do investimento
+
+        # Atualiza o tipo, se fornecido
+        if novo_tipo:
+            registro_encontrado['tipo'] = novo_tipo
+
+        # Atualiza o valor, se fornecido
+        novo_valor = input(f"Valor atual: {registro_encontrado['valor']}. Digite o novo valor ou pressione Enter para manter: ")
+        if novo_valor:
+            registro_encontrado['valor'] = float(novo_valor)
+
+        # Atualiza outros campos específicos de investimento, se aplicável
+        if novo_tipo == 'Investimento':
+            # Atualize a taxa de juros anual, data do investimento, etc., conforme necessário
+            atualizar_montantes_investimento()
+
+        # Atualiza o timestamp de atualização
+        registro_encontrado['timestamp_atualizacao'] = obter_timestamp_atual()
+        escrever_dados(registros)
+        print("Registro atualizado com sucesso.")
+    else:
+        print("Registro não encontrado.")
 def deletar():
-    pass
+    registros = ler_dados()
+    print("Deletar Registro")
+    print("-" * 50)
+    id_registro = int(input("Digite o ID do registro que deseja deletar: "))
+
+    registro_encontrado = next((registro for registro in registros if registro['id'] == id_registro), None)
+    if registro_encontrado:
+        registros.remove(registro_encontrado)
+        escrever_dados(registros)
+        print("Registro deletado com sucesso.")
+    else:
+        print("Registro não encontrado.")
 def main():
     while True:
         inicializar_arquivo()
